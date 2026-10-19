@@ -53,6 +53,27 @@ enum WebScripts {
         // --- Patch: be explicit about unknown routes ---------------------------
         // Anything under the API prefix that the router does not implement must
         // come back as a JSON 404 rather than escaping to the network.
+        // --- Expose the router -------------------------------------------------
+        // ApiRouter (installed after this script) dispatches requests itself, so
+        // it needs handle/parseBody/tokenOf plus the API path test. Exporting them
+        // avoids relying on bridge's origin heuristic, which misbehaves for
+        // custom URL schemes.
+        let fetchAnchor = "  window.fetch = function (input, init) {"
+        let internals = """
+          window.__pbInternals = {
+            handle: handle,
+            parseBody: parseBody,
+            tokenOf: tokenOf,
+            isApi: function (p) { return API.test(p); }
+          };
+
+        """
+        if source.contains(fetchAnchor) {
+            source = source.replacingOccurrences(of: fetchAnchor, with: internals + fetchAnchor)
+        } else {
+            NSLog("[PokeBonk] bridge.js fetch anchor not found; ApiRouter will have no internals")
+        }
+
         NSLog("[PokeBonk] bridge.js injected (\(source.count) bytes)")
         return WKUserScript(source: source,
                             injectionTime: .atDocumentStart,

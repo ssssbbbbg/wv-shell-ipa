@@ -136,12 +136,14 @@ final class GameWebViewController: UIViewController {
         // Diagnostics first: it must be installed before any page script so that
         // module-load failures and early exceptions are captured.
         controller.addUserScript(Diagnostics.script())
-        // Rewrite api.pokebonk.com onto appassets:// before bridge.js captures
-        // fetch, otherwise the offline backend is bypassed entirely.
-        controller.addUserScript(ApiRedirect.script())
+        // bridge.js second; it exports its router in window.__pbInternals.
         if let bridge = WebScripts.bridgeScript() {
             controller.addUserScript(bridge)
         }
+        // ApiRouter last => outermost fetch. It dispatches using the exported
+        // router and plain string paths, so it does not depend on WebKit's
+        // origin/host values for a custom URL scheme.
+        controller.addUserScript(ApiRouter.script())
         controller.addUserScript(WebScripts.bootstrapScript())
         controller.addUserScript(WebScripts.styleScript())
         // Perf tier: seed profile defaults BEFORE the game reads them, so a cold

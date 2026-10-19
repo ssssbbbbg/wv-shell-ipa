@@ -288,12 +288,22 @@ jobs:
       - name: Relax crossorigin attributes for appassets://
         run: |
           set -euo pipefail
-          idx=Resources/site/index.html
-          before=$(grep -o 'crossorigin' "$idx" | wc -l | tr -d ' ')
-          sed -i '' -e 's/ crossorigin//g' "$idx" 2>/dev/null || sed -i -e 's/ crossorigin//g' "$idx"
-          after=$(grep -o 'crossorigin' "$idx" | wc -l | tr -d ' ')
-          echo "crossorigin attributes: $before -> $after"
-          grep -o '<script[^>]*>' "$idx" | head -3
+          python3 - <<'PYEOF'
+          import re, sys
+          path = 'Resources/site/index.html'
+          src = open(path, encoding='utf-8').read()
+          before = src.count('crossorigin')
+          # Drop the attribute whether it leads or trails its neighbours.
+          out = re.sub(r'\s*crossorigin(="[^"]*")?', '', src)
+          open(path, 'w', encoding='utf-8').write(out)
+          after = out.count('crossorigin')
+          print('crossorigin attributes: %d -> %d' % (before, after))
+          print('scripts now:')
+          for tag in re.findall(r'<script[^>]*>', out)[:3]:
+              print('  ' + tag)
+          if before == 0:
+              print('note: index.html had no crossorigin attribute')
+          PYEOF
 
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml

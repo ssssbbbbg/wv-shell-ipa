@@ -55,7 +55,10 @@ command -v xcrun      >/dev/null || die "xcrun not found."
 command -v zip        >/dev/null || die "zip not found."
 command -v plutil     >/dev/null || die "plutil not found."
 
-XCODE_VER="$(xcodebuild -version | head -1)"
+# NB: no `| head -1` here. xcodebuild writes more than one line; closing the pipe
+# early raises NSFileHandleOperationException ("Broken pipe") and aborts with 134.
+XCODE_VER="$(xcodebuild -version 2>/dev/null | sed -n '1p' || true)"
+[ -n "$XCODE_VER" ] || XCODE_VER="(xcodebuild -version failed)"
 log "Host: $(sw_vers -productVersion) / $XCODE_VER"
 
 # ── 1. Site resources sanity (fail early, before a 5-minute compile) ────────

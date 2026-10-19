@@ -152,6 +152,7 @@ final class GameWebViewController: UIViewController {
         // In-game switch panel (needs document.body, hence .atDocumentEnd).
         controller.addUserScript(PerfPanel.script())
         controller.add(WeakScriptMessageHandler(), name: "pbLog")
+        controller.add(DiagMessageHandler(), name: Diagnostics.handlerName)
         controller.add(KeyboardScriptMessageHandler(owner: self), name: "pbKeyboard")
 
         // --- JavaScript: deprecated on iOS 15 but still honoured by the 15.0
@@ -509,5 +510,20 @@ extension GameWebViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         keyboardReturn()
         return false
+    }
+}
+
+// MARK: - Diagnostics sink
+
+/// Receives `{seq, kind, text}` messages from Diagnostics.swift and appends them
+/// to Documents/pokebonk.log. Nothing is drawn on screen.
+final class DiagMessageHandler: NSObject, WKScriptMessageHandler {
+
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        let kind = (body["kind"] as? String) ?? "?"
+        let text = (body["text"] as? String) ?? ""
+        LogStore.shared.append(kind: kind, text: text)
     }
 }

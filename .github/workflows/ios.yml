@@ -108,14 +108,22 @@ jobs:
           [ -n "$TAG" ] || TAG="latest"
           DIGEST=""
           if [ -z "${INPUT_URL}" ]; then
-            DIGEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-              --jq '.assets[] | select(.name=="site.zip") | .digest' 2>/dev/null || true)
+            # Resolve "latest" to a concrete tag first: the /releases/tags/latest
+            # endpoint does not exist.
+            if [ "$TAG" = "latest" ]; then
+              TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || echo "")
+            fi
+            if [ -n "$TAG" ]; then
+              DIGEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+                --jq '.assets[] | select(.name=="site.zip") | .digest' 2>/dev/null || true)
+            fi
           fi
           # Fall back to the tag itself when the digest is unavailable (older GH).
-          KEY="${DIGEST:-tag-${TAG}}"
+          KEY="${DIGEST:-tag-${TAG:-none}}"
           KEY=$(printf '%s' "$KEY" | tr -c 'a-zA-Z0-9._-' '-')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "key=$KEY" >> "$GITHUB_OUTPUT"
-          echo "site cache key: $KEY"
+          echo "site cache key: $KEY (release: ${TAG:-n/a})"
 
       - name: Restore Resources/site
         id: sitecache
@@ -127,60 +135,93 @@ jobs:
             pokebonk-site-
 
       # ── Site resources: site.zip from a Release asset ─────────────────────
+      # Download strategy, most reliable first:
+      #   1. explicit URL input
+      #   2. GitHub REST API asset endpoint with Accept: application/octet-stream
+      #      (works for public and private repos, immune to the release-page
+      #      redirect that `gh release download` occasionally 404s on)
+      #   3. the browser download URL
+      #   4. a repository-local site.zip
+      # Every attempt is retried: a release created moments earlier can still be
+      # propagating.
       - name: Resolve site.zip
         id: site
         if: steps.sitecache.outputs.cache-hit != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # auth for gh on private repos
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ github.event.inputs.site_release_tag }}
           INPUT_URL: ${{ github.event.inputs.site_zip_url }}
+          TAG_HINT: ${{ steps.sitekey.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/site"
           ZIP="$RUNNER_TEMP/site/site.zip"
           REPO="$GITHUB_REPOSITORY"
-          ok=0
-
-          # 1. Direct URL.
-          if [ -n "${INPUT_URL}" ]; then
-            echo "GET ${INPUT_URL}"
-            curl -fsSL -o "$ZIP" "${INPUT_URL}" && ok=1 || ok=0
-          fi
-
-          # 2. Release tag: the input, else the tag this run was triggered by.
-          TAG="${INPUT_TAG}"
-          if [ -z "$TAG" ] && [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
+          TAG="${INPUT_TAG:-${TAG_HINT:-}}"
           [ -n "$TAG" ] || TAG="latest"
 
-          if [ "$ok" -eq 0 ]; then
-            # gh handles auth + redirects; "latest" is a valid tag argument here.
-            gh release download "$TAG" -R "$REPO" -p 'site.zip' \
-               -D "$RUNNER_TEMP/site" --clobber && ok=1 || ok=0
-          fi
-
-          if [ "$ok" -eq 0 ]; then
-            echo "GET https://github.com/${REPO}/releases/download/${TAG}/site.zip"
-            curl -fsSL -o "$ZIP" \
-              "https://github.com/${REPO}/releases/download/${TAG}/site.zip" && ok=1 || ok=0
-          fi
-
-          # 3. Local fallback.
-          if [ "$ok" -eq 0 ] && [ -f site.zip ]; then
-            echo "Using repository-local site.zip"
-            cp site.zip "$ZIP" && ok=1
-          fi
-
-          [ "$ok" -eq 1 ] && [ -s "$ZIP" ] || {
-            echo "::error::site.zip not found. Attach site.zip to a Release (make_site_zip.sh) and re-run with site_release_tag=<tag>."
-            exit 1
+          try_get() {           # try_get <url> [auth]
+            local url="$1" auth="${2:-}"
+            for attempt in 1 2 3 4 5; do
+              if [ -n "$auth" ]; then
+                curl -fsSL --retry 2 --retry-delay 3 --max-time 600 \
+                     -H "Authorization: Bearer ${auth}" \
+                     -H "Accept: application/octet-stream" \
+                     -o "$ZIP" "$url" && return 0
+              else
+                curl -fsSL --retry 2 --retry-delay 3 --max-time 600 \
+                     -o "$ZIP" "$url" && return 0
+              fi
+              echo "attempt ${attempt} failed for ${url}; sleeping $((attempt * 3))s"
+              sleep $((attempt * 3))
+            done
+            return 1
           }
 
-          ls -l "$ZIP"
-          # Reject HTML error pages / truncated downloads.
-          head -c 2 "$ZIP" | od -An -tx1 | grep -q '50 4b' || { echo "::error::site.zip is not a zip"; exit 1; }
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          is_zip() { [ -s "$ZIP" ] && [ "$(head -c 2 "$ZIP")" = "PK" ]; }
+
+          ASSET_ID=""
+          if [ -n "${INPUT_URL}" ]; then
+            echo "== 1. direct URL ${INPUT_URL}"
+            try_get "${INPUT_URL}" && is_zip && { echo "zip=$ZIP" >> "$GITHUB_OUTPUT"; exit 0; }
+          fi
+
+          # Resolve the tag, then the asset id, via the API.
+          if [ -z "${INPUT_TAG}" ]; then
+            if [ "$TAG" = "latest" ]; then
+              TAG=$(gh api "repos/${REPO}/releases/latest" --jq .tag_name 2>/dev/null || echo "")
+            fi
+            if [ -n "${TAG:-}" ]; then
+              ASSET_ID=$(gh api "repos/${REPO}/releases/tags/${TAG}" \
+                --jq '.assets[] | select(.name=="site.zip") | .id' 2>/dev/null || true)
+            else
+              ASSET_ID=$(gh api "repos/${REPO}/releases" \
+                --jq '[.[] | .assets[] | select(.name=="site.zip")][0].id' 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -n "${ASSET_ID}" ]; then
+            echo "== 2. API asset endpoint (id=${ASSET_ID})"
+            if try_get "https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}" "${GH_TOKEN}"; then
+              if is_zip; then echo "zip=$ZIP" >> "$GITHUB_OUTPUT"; exit 0; fi
+            fi
+          fi
+
+          if [ -n "${TAG:-}" ]; then
+            echo "== 3. browser download URL (tag=${TAG})"
+            if try_get "https://github.com/${REPO}/releases/download/${TAG}/site.zip"; then
+              if is_zip; then echo "zip=$ZIP" >> "$GITHUB_OUTPUT"; exit 0; fi
+            fi
+          fi
+
+          echo "== 4. repository-local site.zip"
+          if [ -f site.zip ] && cp site.zip "$ZIP" && is_zip; then
+            echo "zip=$ZIP" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          ls -l "$ZIP" 2>/dev/null || true
+          echo "::error::site.zip not found. Attach site.zip to a Release (make_site_zip.sh) and re-run with site_release_tag=<tag>."
+          exit 1
 
       - name: Unpack site into Resources/site
         if: steps.sitecache.outputs.cache-hit != 'true'

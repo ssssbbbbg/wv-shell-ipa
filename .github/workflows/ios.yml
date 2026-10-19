@@ -56,7 +56,7 @@ env:
 jobs:
   ipa:
     name: Build unsigned IPA
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -68,15 +68,19 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # macos-14 ships Xcode 15.x (newer images 16.x). Use /Applications/Xcode.app
-          # if present, else link the highest version found; never pin a missing path.
-          if [ ! -d /Applications/Xcode.app ]; then
+          # xcodegen emits objectVersion 77 (Xcode 16 format). Xcode 15 cannot read
+          # it, so pick the newest Xcode that is actually installed and refuse to
+          # continue if it is older than 16.
+          newest="$(ls -d /Applications/Xcode_1[6-9]*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$newest" ]; then
             newest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
-            [ -n "$newest" ] && sudo ln -sfn "$newest" /Applications/Xcode.app
           fi
-          test -d /Applications/Xcode.app
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          [ -n "$newest" ] || { echo "::error::no Xcode found"; exit 1; }
+          echo "using $newest"
+          sudo xcode-select -s "$newest/Contents/Developer"
           xcodebuild -version
+          major="$(xcodebuild -version | sed -n 's/^Xcode *\([0-9]*\).*/\1/p')"
+          [ "${major:-0}" -ge 16 ] || { echo "::error::Xcode ${major} is too old for objectVersion 77"; exit 1; }
           xcodebuild -showsdks | grep -E "iphoneos"
 
       - name: Install XcodeGen

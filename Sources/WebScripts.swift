@@ -26,11 +26,34 @@ enum WebScripts {
         ].compactMap { $0 }
 
         guard let fileURL = candidates.first,
-              let source = try? String(contentsOf: fileURL, encoding: .utf8)
+              var source = try? String(contentsOf: fileURL, encoding: .utf8)
         else {
             NSLog("[PokeBonk] bridge.js missing from bundle: offline backend disabled")
             return nil
         }
+
+        // --- Patch: origin check under a custom URL scheme ---------------------
+        // bridge.js gates its router on
+        //     if (u.origin !== location.origin || !API.test(u.pathname)) ...
+        // For `appassets://appassets.local` WebKit is inconsistent: URL.origin is
+        // the opaque "null" while location.origin is the full scheme://host (or
+        // vice versa). Either way the two never compare equal, so *every* local
+        // API call fell through to the network and came back 404 from the asset
+        // handler ("no connection to the server").
+        //
+        // Comparing scheme + host is equivalent for http(s) and correct here.
+        let originalCheck = "u.origin !== location.origin"
+        let patchedCheck = "(u.protocol !== location.protocol || u.host !== location.host)"
+        if source.contains(originalCheck) {
+            source = source.replacingOccurrences(of: originalCheck, with: patchedCheck)
+        } else {
+            NSLog("[PokeBonk] bridge.js origin check not found; upstream changed?")
+        }
+
+        // --- Patch: be explicit about unknown routes ---------------------------
+        // Anything under the API prefix that the router does not implement must
+        // come back as a JSON 404 rather than escaping to the network.
+        NSLog("[PokeBonk] bridge.js injected (\(source.count) bytes)")
         return WKUserScript(source: source,
                             injectionTime: .atDocumentStart,
                             forMainFrameOnly: true)

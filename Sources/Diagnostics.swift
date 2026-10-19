@@ -44,9 +44,23 @@ enum Diagnostics {
             shown = true;
           }
 
+          var stateAdded = false;
           function add(kind, text) {
             if (log.length > 40) return;
             log.push('[' + kind + '] ' + text);
+            // On the first network problem, also dump the environment so the
+            // screenshot explains itself.
+            if (!stateAdded && (kind === 'http' || kind === 'fetch-fail')) {
+              stateAdded = true;
+              log.push('[state] bridge=' + (window.__pbBridge ? 'y' : 'n') +
+                       ' redirect=' + (window.__pbApiRedirect ? 'y' : 'n') +
+                       ' perf=' + (window.__pbPerf ? 'y' : 'n') +
+                       ' storage=' + (function () {
+                         try { localStorage.setItem('__t', '1'); localStorage.removeItem('__t'); return 'ok'; }
+                         catch (e) { return 'BLOCKED'; }
+                       })() +
+                       ' rewrites=' + ((window.__pbRewrites || []).length));
+            }
             paint();
           }
 

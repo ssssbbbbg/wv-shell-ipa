@@ -182,7 +182,9 @@ final class GameWebViewController: UIViewController {
             webView.isInspectable = false
         }
         if #available(iOS 16.0, *) {
-            webView.preferences.isTextInteractionEnabled = false
+            // `WKWebView.preferences` was removed in the Xcode 16 SDK; the same
+            // property lives on the configuration.
+            webView.configuration.preferences.isTextInteractionEnabled = false
         }
     }
 
@@ -313,10 +315,10 @@ final class GameWebViewController: UIViewController {
     private func installObservers() {
         guard !didInstallObservers else { return }
         didInstallObservers = true
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(webProcessTerminated(_:)),
-                                               name: .WKWebViewWebProcessDidCrash,
-                                               object: webView)
+        // Process termination is a WKNavigationDelegate callback
+        // (webViewWebContentProcessDidTerminate); the old
+        // .WKWebViewWebProcessDidCrash notification constant no longer exists in
+        // the Xcode 16 SDK, so nothing is registered here.
 
         // Low Power Mode: drop to the 省电 tier while the system flag is on and
         // restore the user's own choice when it clears.
@@ -339,7 +341,7 @@ final class GameWebViewController: UIViewController {
         PerfTuning.lowPowerModeChanged(enabled: enabled) { [weak self] in self?.webView }
     }
 
-    @objc private func webProcessTerminated(_ note: Notification) {
+    private func webProcessTerminated() {
         // GPU/JS memory pressure can kill the WebProcess. localStorage already lives
         // in the persistent data store; the game restores from its own autosave.
         NSLog("[PokeBonk] WebProcess terminated, reloading")
@@ -407,6 +409,12 @@ extension GameWebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         didFinishFirstLoad = true
         removeInteractionMenus(in: webView)
+    }
+
+    /// Xcode 16 SDK: this is the supported replacement for the removed
+    /// .WKWebViewWebProcessDidCrash notification.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webProcessTerminated()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

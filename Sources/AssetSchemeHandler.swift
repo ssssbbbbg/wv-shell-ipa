@@ -166,9 +166,28 @@ final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
             end(urlSchemeTask)
             return
         }
+
+        // CORS preflight / HEAD: answer without touching the file system.
+        let method = (urlSchemeTask.request.httpMethod ?? "GET").uppercased()
+        if method == "OPTIONS" {
+            respond(urlSchemeTask, requestURL: requestURL, status: 204,
+                    headers: [
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Max-Age": "86400",
+                        "Content-Length": "0"
+                    ],
+                    body: Data())
+            return
+        }
+
         guard let fileURL = fileURL(for: requestURL) else {
             respond(urlSchemeTask, requestURL: requestURL, status: 404,
-                    headers: ["Content-Type": "text/plain; charset=utf-8"],
+                    headers: [
+                        "Content-Type": "text/plain; charset=utf-8",
+                        "Access-Control-Allow-Origin": "*"
+                    ],
                     body: Data("Not Found\n".utf8))
             return
         }
@@ -182,7 +201,10 @@ final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
             data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
         } catch {
             respond(urlSchemeTask, requestURL: requestURL, status: 500,
-                    headers: ["Content-Type": "text/plain; charset=utf-8"],
+                    headers: [
+                        "Content-Type": "text/plain; charset=utf-8",
+                        "Access-Control-Allow-Origin": "*"
+                    ],
                     body: Data("Read error\n".utf8))
             return
         }
@@ -208,7 +230,16 @@ final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
             // WKURLSchemeHandler cannot answer Range requests. Advertising "none"
             // keeps WebKit/AVFoundation from retrying with ranges; see README.
             "Accept-Ranges": "none",
-            "X-Content-Type-Options": "nosniff"
+            "X-Content-Type-Options": "nosniff",
+            // index.html loads its bundles as `<script type="module" crossorigin>`.
+            // Under a custom scheme WebKit treats those as CORS requests with an
+            // opaque ("null") origin, so without these headers every module is
+            // rejected and the app shows a black screen with no console output.
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Expose-Headers": "Content-Length, Content-Type",
+            "Cross-Origin-Resource-Policy": "cross-origin"
         ]
     }
 

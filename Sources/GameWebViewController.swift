@@ -133,6 +133,9 @@ final class GameWebViewController: UIViewController {
         // see the pristine window), then our glue, then the CSS override. All three
         // run at document start, i.e. before any game module executes.
         let controller = config.userContentController
+        // Diagnostics first: it must be installed before any page script so that
+        // module-load failures and early exceptions are captured.
+        controller.addUserScript(Diagnostics.script())
         if let bridge = WebScripts.bridgeScript() {
             controller.addUserScript(bridge)
         }

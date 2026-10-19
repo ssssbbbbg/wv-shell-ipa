@@ -279,6 +279,22 @@ jobs:
           echo "site tree ok: $(find Resources/site -type f | wc -l) files"
 
       # ── Build ──────────────────────────────────────────────────────────────
+      # ── Custom-scheme fix ──────────────────────────────────────────────────
+      # index.html loads its bundles as `<script type="module" crossorigin>`.
+      # Under appassets:// the page origin is opaque, so WebKit issues a CORS
+      # request; if anything in that path fails the whole game silently never
+      # boots (black screen, empty #ui). The resources are already same-origin
+      # and served by our own handler, so the attribute is unnecessary: strip it.
+      - name: Relax crossorigin attributes for appassets://
+        run: |
+          set -euo pipefail
+          idx=Resources/site/index.html
+          before=$(grep -o 'crossorigin' "$idx" | wc -l | tr -d ' ')
+          sed -i '' -e 's/ crossorigin//g' "$idx" 2>/dev/null || sed -i -e 's/ crossorigin//g' "$idx"
+          after=$(grep -o 'crossorigin' "$idx" | wc -l | tr -d ' ')
+          echo "crossorigin attributes: $before -> $after"
+          grep -o '<script[^>]*>' "$idx" | head -3
+
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 

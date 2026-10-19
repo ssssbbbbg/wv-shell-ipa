@@ -335,7 +335,9 @@ jobs:
           # at runtime instead (see README 6.3).
           ( cd Resources/site && find . -type f -print | sort ) > "$RUNNER_TEMP/expected.txt"
           ( cd "$APP/site"     && find . -type f -print | sort ) > "$RUNNER_TEMP/actual.txt"
-          missing=$(comm -23 "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt" | head -20)
+          # No pipe into head: with pipefail, head closing early makes comm fail.
+          comm -23 "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt" > "$RUNNER_TEMP/missing.txt" || true
+          missing=$(sed -n '1,20p' "$RUNNER_TEMP/missing.txt")
           if [ -n "$missing" ]; then
             echo "::error::files lost during resource copy:"; echo "$missing"; exit 1
           fi
@@ -347,13 +349,16 @@ jobs:
           # the same way a sideloader does: Payload/PokeBonk.app/{Info.plist,PokeBonk,PkgInfo,site/}.
           IPA="build/$IPA_NAME"
           test -f "$IPA"
+          # Listing to a file first: `unzip -l | grep -q` dies of SIGPIPE under
+          # pipefail as soon as grep matches.
+          unzip -Z1 "$IPA" > "$RUNNER_TEMP/ipa.txt"
           for entry in \
               "Payload/$APP_NAME/Info.plist" \
               "Payload/$APP_NAME/PokeBonk" \
               "Payload/$APP_NAME/PkgInfo" \
               "Payload/$APP_NAME/site/index.html" \
               "Payload/$APP_NAME/site/bridge.js"; do
-            unzip -l "$IPA" | awk '{print $4}' | grep -qx "$entry" \
+            grep -qx "$entry" "$RUNNER_TEMP/ipa.txt" \
               || { echo "::error::ipa is missing $entry"; exit 1; }
           done
           ls -lh "$IPA"

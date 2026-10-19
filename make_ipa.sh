@@ -205,9 +205,15 @@ log "Packaging $IPA"
 ( cd "$STAGE" && zip -q -r -y -X "$IPA" Payload )
 
 # ── 6. Verify the ipa structure ─────────────────────────────────────────────
-unzip -l "$IPA" | grep -q "Payload/${APP_NAME}/Info.plist" || die "ipa has no Payload/${APP_NAME}/Info.plist"
-unzip -l "$IPA" | grep -q "Payload/${APP_NAME}/PokeBonk$"  || die "ipa has no executable"
-unzip -l "$IPA" | grep -q "Payload/${APP_NAME}/site/index.html" || die "ipa has no site/index.html"
+# `unzip -l | grep -q` is unsafe under `set -o pipefail`: grep exits at the first
+# match, unzip gets SIGPIPE, and the whole pipeline is reported as failed. Build
+# the listing once, then grep the file.
+IPA_LIST="$STAGE/.ipa-listing.txt"
+unzip -Z1 "$IPA" > "$IPA_LIST"
+grep -qx "Payload/${APP_NAME}/Info.plist"     "$IPA_LIST" || die "ipa has no Payload/${APP_NAME}/Info.plist"
+grep -qx "Payload/${APP_NAME}/PokeBonk"       "$IPA_LIST" || die "ipa has no executable"
+grep -qx "Payload/${APP_NAME}/site/index.html" "$IPA_LIST" || die "ipa has no site/index.html"
+rm -f "$IPA_LIST"
 
 IPA_SIZE_MB="$(( $(stat -f%z "$IPA") / 1024 / 1024 ))"
 log "OK → $IPA (${IPA_SIZE_MB} MB)"

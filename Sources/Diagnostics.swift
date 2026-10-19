@@ -108,11 +108,46 @@ enum Diagnostics {
           function hide() { if (panel) { panel.style.display = 'none'; } }
 
           // ---------- logging ----------
+          // Kinds that mean "something is broken". Only these surface the panel;
+          // everything else (route traces, boot probes) is buffered silently so
+          // normal play is never covered by an overlay.
+          // Things that are always a real fault.
+          var ALARM = { 'resource': 1, 'error': 1, 'promise': 1, 'console.error': 1 };
+
+          // Network failures only alarm for API paths. The game probes optional
+          // files on purpose (front/N.png exists for 54 ids, the rest fall back
+          // to icons/N.png), so an asset 404 is normal operation, not a fault.
+          // Same expression as bridge.js's router so the two agree.
+          var API_PATH = /^\/(status|auth\/|profile|runs|news$|records|seasons|leaderboard|mail|clans|friends|players|lab\/|items\/|quests\/|tasks\/|feedback)/;
+
+          var seen = {};
           window.__pbDiagLog = function (kind, text) {
             if (lines.length > 200) return;
+            var alarm = !!ALARM[kind];
+            if (kind === 'net' || kind === 'net-fail' || kind === 'fetch-fail') {
+              var m = String(text).match(/(appassets:\/\/appassets\.local|https?:\/\/[^\s]*pokebonk\.com)?(\/[^\s?]*)/);
+              var p = m ? m[2] : '';
+              alarm = API_PATH.test(p);
+              if (!alarm) { return; }        // optional-asset probe: ignore entirely
+            }
+            var sig = kind + '|' + text;
+            if (seen[sig]) { return; }       // do not stack identical failures
+            seen[sig] = 1;
             lines.push('[' + kind + '] ' + text);
-            paint();
+            if (alarm) { paint(); }
           };
+
+          // Escape hatch: open the log on demand without any visible UI.
+          // Five quick taps in the top-left corner toggles it.
+          var taps = 0, tapT = 0;
+          window.addEventListener('touchstart', function (e) {
+            var t = (e.touches && e.touches[0]) || e;
+            if (t.clientX > 60 || t.clientY > 60) { taps = 0; return; }
+            var now = Date.now();
+            if (now - tapT > 900) { taps = 0; }
+            tapT = now;
+            if (++taps >= 5) { taps = 0; paint(); }
+          }, { passive: true, capture: true });
 
           // ---------- error channels ----------
           window.addEventListener('error', function (e) {

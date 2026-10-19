@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for RE-SIGNING only. The unsigned build has code signing disabled,
+  so this file is never applied by xcodebuild.
+
+  Minimal entitlement set: a free Apple developer account cannot use
+  application-identifier / keychain-access-groups with a wildcard profile, and the
+  app uses neither. Add TeamIdentifierPrefix-based groups only if you need Keychain
+  sharing.
+
+  usage:
+    codesign -f -s "Apple Development: You (TEAMID)" \
+             --entitlements Config/PokeBonk.entitlements \
+             --generate-entitlement-der Payload/PokeBonk.app
+-->
+<plist version="1.0">
+<dict>
+	<key>get-task-allow</key>
+	<false/>
+</dict>
+</plist>

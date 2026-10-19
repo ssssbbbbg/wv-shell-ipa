@@ -1,0 +1,28 @@
+// Settings shared by Debug and Release. See Config/Shared.Release.xcconfig.
+// The real source of truth for identity/orientation is Resources/Info.plist and
+// project.yml; this file mirrors them so a plain `xcodegen generate` is enough.
+
+PRODUCT_BUNDLE_IDENTIFIER = com.pokebonk.offline
+PRODUCT_NAME = PokeBonk
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
+// iPad only (UIDeviceFamily = [2] is also pinned in Info.plist).
+TARGETED_DEVICE_FAMILY = 2
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
+SWIFT_VERSION = 5.0
+
+// Unsigned by default: no team, no provisioning profile.
+CODE_SIGNING_REQUIRED = NO
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGN_IDENTITY =
+CODE_SIGN_ENTITLEMENTS =
+
+// 64-bit only; the 70-80 MB site rules out 32-bit phones anyway.
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SDKROOT = iphoneos
+
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+ENABLE_MODULE_VERIFIER = NO

@@ -1,0 +1,125 @@
+# XcodeGen spec — https://github.com/yonaskolb/XcodeGen
+#
+#   brew install xcodegen
+#   cd PokeBonk && xcodegen generate
+#   open PokeBonk.xcodeproj
+#
+# The .xcodeproj is generated (and git-ignored). The CI does the same thing, so the
+# checked-in truth is this file, not a 2000-line pbxproj.
+
+name: PokeBonk
+
+options:
+  bundleIdPrefix: com.pokebonk
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  groupSortPosition: top
+  developmentLanguage: zh-Hans
+  # Keep settings identical between local Xcode and the CI xcodebuild call.
+  xcodeVersion: "15.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared xcconfig: identity, landscape, no-code-sign, arm64.
+# Individual *_xcconfig that a target references are merged into every
+# configuration of that target.
+# ─────────────────────────────────────────────────────────────────────────────
+fileGroups:
+  - project.yml
+  - make_ipa.sh
+  - make_site_zip.sh
+  - README.md
+
+settings:
+  base:
+    # No signing anywhere: the deliverable is an *unsigned* .ipa.
+    # (make_ipa.sh also passes these on the xcodebuild command line; keep both.)
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    PROVISIONING_PROFILE_SPECIFIER: ""
+
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CLANG_ENABLE_MODULES: YES
+    ALWAYS_SEARCH_USER_PATHS: NO
+    DEAD_CODE_STRIPPING: YES
+    STRIP_INSTALLED_PRODUCT: YES
+
+targets:
+  PokeBonk:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+
+    # Info.plist is not a source: INFOPLIST_FILE points at it below.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pokebonk.offline
+        PRODUCT_NAME: PokeBonk
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "2"          # iPad only
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_BITCODE: NO                   # removed in Xcode 14 anyway
+        ONLY_ACTIVE_ARCH: NO
+        ARCHS: arm64
+        SWIFT_EMIT_LOC_STRINGS: NO
+        # No PreviewSupport: it bloats the bundle and is useless for a web view.
+        ENABLE_PREVIEWS: NO
+        MTL_FAST_MATH: YES
+        STRIP_SWIFT_SYMBOLS: YES
+        # Unused locales are dropped; the game ships its own i18n JSON.
+        LOCALIZATION_PREFERS_STRING_CATALOGS: NO
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+          SWIFT_COMPILATION_MODE: incremental
+          GCC_OPTIMIZATION_LEVEL: "0"
+          DEBUG_INFORMATION_FORMAT: dwarf
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          SWIFT_COMPILATION_MODE: wholemodule
+          DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
+          VALIDATE_PRODUCT: YES
+
+    sources:
+      - path: Sources
+        name: Sources
+        excludes:
+          - "**/*.md"
+      # Asset catalog (app icon + launch colour).
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+      # The mirrored site, as a folder *reference* (blue folder): the whole tree is
+      # copied verbatim into PokeBonk.app/site, case preserved, nothing compiled or
+      # Info.plist-processed. `optional` so a clean checkout (no site.zip yet)
+      # still generates a project; the app then shows "site/ is missing".
+      - path: Resources/site
+        type: folder
+        buildPhase: resources
+        optional: true
+
+    # Linker flags: nothing custom. WebKit / UIKit / UniformTypeIdentifiers are
+    # auto-linked by the Swift compiler from the `import` statements.
+
+schemes:
+  PokeBonk:
+    build:
+      targets:
+        PokeBonk: all
+    run:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    archive:
+      config: Release

@@ -1,0 +1,11 @@
+// Settings for opening PokeBonk.xcodeproj directly in Xcode (no CI).
+// make_ipa.sh passes the same values on the xcodebuild command line, so both
+// paths produce identical bundles. Never put secrets here: this file is committed.
+
+#include "Shared.xcconfig"
+
+// Signing is off by default because the deliverable is an unsigned ipa.
+// For a local device run, override in Xcode ▸ Signing & Capabilities:
+//   CODE_SIGNING_ALLOWED = YES, DEVELOPMENT_TEAM = <TEAMID>,
+//   CODE_SIGN_STYLE = Automatic
+// If you override here instead, remember not to commit the team ID.

@@ -83,7 +83,28 @@ enum Diagnostics {
             };
           });
 
-          // 4. Boot watchdog: the game paints into #ui; if it is still empty after
+          // 4. Network trace. Installed before bridge.js, so bridge's own wrapper
+          //    captures this as `origFetch`: every request bridge does NOT answer
+          //    locally still lands here, which is exactly what we need to see.
+          var reqs = [];
+          var origFetch = window.fetch;
+          window.fetch = function (input, init) {
+            var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+            var method = ((init && init.method) || 'GET').toUpperCase();
+            var p = origFetch.apply(window, arguments);
+            p.then(function (r) {
+              if (!r || r.status >= 400) {
+                add('http', (r ? r.status : '?') + ' ' + method + ' ' + url);
+              } else if (reqs.length < 20) {
+                reqs.push(r.status + ' ' + method + ' ' + url);
+              }
+            }, function (e) {
+              add('fetch-fail', method + ' ' + url + ' :: ' + ((e && e.message) || e));
+            });
+            return p;
+          };
+
+          // 5. Boot watchdog: the game paints into #ui; if it is still empty after
           //    6 s, something silently stalled. Report what loaded instead.
           function watchdog() {
             var ui = document.getElementById('ui');
@@ -102,6 +123,10 @@ enum Diagnostics {
               })());
               add('watchdog', 'body children: ' + document.body.children.length);
             }
+            add('state', 'bridge=' + (window.__pbBridge ? 'y' : 'n') +
+                          ' perf=' + (window.__pbPerf ? 'y' : 'n') +
+                          ' storage=' + (function () { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return 'ok'; } catch (e) { return 'BLOCKED'; } })());
+            add('state', 'ok requests: ' + (reqs.slice(0, 6).join(' | ') || 'none'));
           }
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function () { setTimeout(watchdog, 6000); });

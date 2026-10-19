@@ -136,6 +136,9 @@ final class GameWebViewController: UIViewController {
         // Diagnostics first: it must be installed before any page script so that
         // module-load failures and early exceptions are captured.
         controller.addUserScript(Diagnostics.script())
+        // Rewrite api.pokebonk.com onto appassets:// before bridge.js captures
+        // fetch, otherwise the offline backend is bypassed entirely.
+        controller.addUserScript(ApiRedirect.script())
         if let bridge = WebScripts.bridgeScript() {
             controller.addUserScript(bridge)
         }

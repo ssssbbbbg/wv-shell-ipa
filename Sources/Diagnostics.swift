@@ -118,14 +118,14 @@ enum Diagnostics {
           // files on purpose (front/N.png exists for 54 ids, the rest fall back
           // to icons/N.png), so an asset 404 is normal operation, not a fault.
           // Same expression as bridge.js's router so the two agree.
-          var API_PATH = /^\/(status|auth\/|profile|runs|news$|records|seasons|leaderboard|mail|clans|friends|players|lab\/|items\/|quests\/|tasks\/|feedback)/;
+          var API_PATH = /^\\/(status|auth\\/|profile|runs|news$|records|seasons|leaderboard|mail|clans|friends|players|lab\\/|items\\/|quests\\/|tasks\\/|feedback)/;
 
           var seen = {};
           window.__pbDiagLog = function (kind, text) {
             if (lines.length > 200) return;
             var alarm = !!ALARM[kind];
             if (kind === 'net' || kind === 'net-fail' || kind === 'fetch-fail') {
-              var m = String(text).match(/(appassets:\/\/appassets\.local|https?:\/\/[^\s]*pokebonk\.com)?(\/[^\s?]*)/);
+              var m = String(text).match(/(appassets:\\/\\/appassets\\.local|https?:\\/\\/[^\\s]*pokebonk\\.com)?(\\/[^\\s?]*)/);
               var p = m ? m[2] : '';
               alarm = API_PATH.test(p);
               if (!alarm) { return; }        // optional-asset probe: ignore entirely
